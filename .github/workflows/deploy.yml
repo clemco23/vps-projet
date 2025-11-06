@@ -1,0 +1,53 @@
+name: Deploy Frontend & Backend to VPS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      
+      - name: Build frontend
+        working-directory: ./admin-dashboard
+        run: |
+          npm ci
+          npm run build
+
+      
+      - name: Deploy to VPS via rsync
+        uses: burnett01/rsync-deployments@5.2
+        with:
+          switches: -avzr --delete
+          path: ./admin-dashboard/dist/
+          remote_path: ${{ secrets.VPS_PATH }}/admin-dashboard/dist/
+          remote_host: ${{ secrets.VPS_HOST }}
+          remote_user: ${{ secrets.VPS_USER }}
+          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
+          remote_port: ${{ secrets.VPS_PORT }}
+
+      
+      - name: Restart services on VPS
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script: |
+            cd /var/www/vps-projet/backend-API
+            pm2 restart backend || pm2 start index.js --name backend
+            cd /var/www/vps-projet/admin-dashboard
+            pm2 restart frontend || pm2 serve dist 8080 --spa --name frontend
+            pm2 save
